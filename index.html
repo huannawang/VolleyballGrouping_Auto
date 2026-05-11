@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>排球自動分隊系統</title>
+  <title>自動分隊</title>
   <style>
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
     body { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #f4f6f9; color: #333; overflow-x: hidden; }
@@ -25,16 +25,25 @@
     .input-group select, .input-group input { width: 100px; font-size: 18px; text-align: center; padding: 8px; border: 1px solid #ccc; border-radius: 8px; }
 
     /* 第二步：輸入名單 */
-    .names-container { width: 100%; max-width: 400px; padding-bottom: 80px; }
+    .names-container { width: 100%; max-width: 450px; padding-bottom: 80px; }
     .gender-section { margin-bottom: 20px; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
     .gender-title { padding: 10px 15px; font-weight: bold; color: white; }
     .title-men { background-color: #4a90e2; }
     .title-women { background-color: #e83e8c; }
-    .name-inputs { padding: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .name-inputs input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 16px; text-align: center; }
+    
+    /* 輸入框排版 */
+    .men-inputs-area { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px; }
+    .women-inputs-area { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
+    
+    .men-inputs-area input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 16px; text-align: center; }
+    
+    /* 女生欄位與綁定下拉選單 */
+    .female-row { display: flex; gap: 8px; }
+    .female-row input { flex: 5; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 16px; text-align: center; width: 100%; }
+    .female-row select { flex: 4; padding: 8px 4px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; background-color: #fdfdfd; color: #555; }
     
     /* 底部固定操作列 */
-    .bottom-bar { position: fixed; bottom: 0; left: 0; width: 100%; padding: 15px 20px; background: #fff; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); display: flex; gap: 10px; justify-content: center; }
+    .bottom-bar { position: fixed; bottom: 0; left: 0; width: 100%; padding: 15px 20px; background: #fff; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); display: flex; gap: 10px; justify-content: center; z-index: 10; }
     .bottom-bar button { max-width: 180px; }
 
     /* 第三步：分組結果 */
@@ -42,10 +51,11 @@
     .team-card { background: #fff; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: calc(50% - 10px); min-width: 140px; display: flex; flex-direction: column; overflow: hidden; }
     .team-header { display: flex; align-items: center; justify-content: center; padding: 10px; font-size: 24px; font-weight: bold; border-bottom: 1px solid #eee; }
     .team-list { padding: 0; margin: 0; list-style: none; flex: 1; }
-    .team-list li { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; text-align: center; font-size: 16px; }
+    .team-list li { padding: 8px 5px; border-bottom: 1px solid #f0f0f0; text-align: center; font-size: 16px; }
     .team-list li:last-child { border-bottom: none; }
     .player-men { color: #0056b3; }
     .player-women { color: #c82333; }
+    .couple-icon { font-size: 14px; margin-left: 4px; }
   </style>
 </head>
 <body>
@@ -53,7 +63,7 @@
   <!-- 第一步：選擇人數 -->
   <div id="step1" class="screen active-screen">
     <div class="setup-box">
-      <h2>排球分隊 (進階版)</h2>
+      <h2>排球分隊 (支援綁定)</h2>
       <div class="input-group">
         <label>總人數：</label>
         <select id="total-select" onchange="initGenderCounts()">
@@ -76,15 +86,15 @@
 
   <!-- 第二步：輸入名單 -->
   <div id="step2" class="screen">
-    <h2 style="margin-top:0;">輸入球員名單</h2>
+    <h2 style="margin-top:0;">輸入球員與設定綁定</h2>
     <div class="names-container">
       <div class="gender-section">
         <div class="gender-title title-men" id="men-title">男生名單</div>
-        <div class="name-inputs" id="men-inputs-area"></div>
+        <div class="men-inputs-area" id="men-inputs-area"></div>
       </div>
       <div class="gender-section">
-        <div class="gender-title title-women" id="women-title">女生名單</div>
-        <div class="name-inputs" id="women-inputs-area"></div>
+        <div class="gender-title title-women" id="women-title">女生名單 (可選擇綁定對象)</div>
+        <div class="women-inputs-area" id="women-inputs-area"></div>
       </div>
     </div>
     <div class="bottom-bar">
@@ -114,8 +124,9 @@
     let currentConfig = { total: 18, men: 9, women: 9 };
     let savedMenNames = [];
     let savedWomenNames = [];
+    let savedWomenCouples = []; // 紀錄女生選擇綁定的男生索引
 
-    // --- 第一步：人數連動邏輯 ---
+    // --- 第一步邏輯 ---
     function initGenderCounts() {
       const total = parseInt(document.getElementById('total-select').value);
       const half = total / 2;
@@ -140,16 +151,13 @@
       }
     }
 
-    // --- 畫面切換 ---
     function switchScreen(screenId) {
-      document.getElementById('step1').classList.remove('active-screen');
-      document.getElementById('step2').classList.remove('active-screen');
-      document.getElementById('step3').classList.remove('active-screen');
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active-screen'));
       document.getElementById(screenId).classList.add('active-screen');
       window.scrollTo(0, 0);
     }
 
-    // --- 前往第二步：產生輸入框 ---
+    // --- 前往第二步 ---
     function goToStep2() {
       currentConfig.total = parseInt(document.getElementById('total-select').value);
       currentConfig.men = parseInt(document.getElementById('men-input').value);
@@ -158,82 +166,185 @@
       document.getElementById('men-title').innerText = `男生名單 (${currentConfig.men}人)`;
       document.getElementById('women-title').innerText = `女生名單 (${currentConfig.women}人)`;
 
-      generateInputFields('men-inputs-area', currentConfig.men, '男', savedMenNames);
-      generateInputFields('women-inputs-area', currentConfig.women, '女', savedWomenNames);
-
+      generateMenInputs('men-inputs-area', currentConfig.men);
+      generateWomenInputs('women-inputs-area', currentConfig.women);
+      
+      // 初始產生情侶綁定下拉選單
+      updateCoupleDropdowns(); 
       switchScreen('step2');
     }
 
-    function generateInputFields(containerId, count, prefix, savedArray) {
+    function generateMenInputs(containerId, count) {
       const container = document.getElementById(containerId);
       container.innerHTML = '';
       for (let i = 0; i < count; i++) {
         let input = document.createElement('input');
         input.type = 'text';
-        // 如果之前有輸入過就保留，沒有的話給預設值(例如: 男1)
-        input.value = savedArray[i] || `${prefix}${i + 1}`; 
-        // 點擊時自動全選，方便快速修改
+        input.className = 'man-name-input';
+        input.value = savedMenNames[i] || `男${i+1}`;
         input.onfocus = function() { this.select(); };
+        // 男生名字一有變動，立刻更新女生的綁定選單
+        input.oninput = updateCoupleDropdowns; 
         container.appendChild(input);
       }
     }
 
-    // --- 前往第三步：執行分組 ---
-    function goToStep3() {
-      // 1. 收集名單
-      savedMenNames = Array.from(document.getElementById('men-inputs-area').querySelectorAll('input')).map(input => input.value.trim() || '未命名');
-      savedWomenNames = Array.from(document.getElementById('women-inputs-area').querySelectorAll('input')).map(input => input.value.trim() || '未命名');
+    function generateWomenInputs(containerId, count) {
+      const container = document.getElementById(containerId);
+      container.innerHTML = '';
+      for (let i = 0; i < count; i++) {
+        let div = document.createElement('div');
+        div.className = 'female-row';
 
-      // 2. 進行分組計算與畫面渲染
-      reshuffleTeams();
-      
-      // 3. 切換畫面
-      switchScreen('step3');
+        let input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'woman-name-input';
+        input.value = savedWomenNames[i] || `女${i+1}`;
+        input.onfocus = function() { this.select(); };
+
+        let select = document.createElement('select');
+        select.className = 'couple-select';
+        select.dataset.index = i;
+        select.onchange = function() {
+          savedWomenCouples[this.dataset.index] = this.value; // 儲存選擇
+        };
+
+        div.appendChild(input);
+        div.appendChild(select);
+        container.appendChild(div);
+      }
     }
 
-    // --- 重新分組 (洗牌核心演算法) ---
+    // 動態更新綁定選單
+    function updateCoupleDropdowns() {
+      const maleInputs = document.querySelectorAll('.man-name-input');
+      const maleNames = Array.from(maleInputs).map((input, i) => ({ id: i, name: input.value.trim() || `男${i+1}` }));
+
+      const selects = document.querySelectorAll('.couple-select');
+      selects.forEach((select) => {
+        const currentIndex = select.dataset.index;
+        const savedValue = savedWomenCouples[currentIndex] || "";
+        
+        select.innerHTML = '<option value="">無綁定</option>';
+        maleNames.forEach(m => {
+          let option = document.createElement('option');
+          option.value = m.id;
+          // 限制名字顯示長度，避免選單太寬
+          let displayName = m.name.length > 5 ? m.name.substring(0,4) + '...' : m.name;
+          option.textContent = `與 ${displayName}`;
+          select.appendChild(option);
+        });
+
+        // 恢復之前的選擇 (如果有且仍然有效)
+        if (savedValue !== "" && parseInt(savedValue) < maleNames.length) {
+          select.value = savedValue;
+        } else {
+          select.value = "";
+          savedWomenCouples[currentIndex] = "";
+        }
+      });
+    }
+
+    // --- 前往第三步 ---
+    function goToStep3() {
+      // 收集名單
+      savedMenNames = Array.from(document.querySelectorAll('.man-name-input')).map(input => input.value.trim() || '未命名');
+      savedWomenNames = Array.from(document.querySelectorAll('.woman-name-input')).map(input => input.value.trim() || '未命名');
+      
+      reshuffleTeams();
+    }
+
+    // --- 分組核心演算法 (含情侶不拆散邏輯) ---
     function reshuffleTeams() {
       const teamsCount = currentConfig.total / 6; 
       const activeSuits = ALL_SUITS.slice(0, teamsCount);
       
-      // 複製名單並打亂 (Fisher-Yates Shuffle)
-      let shuffledMen = [...savedMenNames].sort(() => Math.random() - 0.5);
-      let shuffledWomen = [...savedWomenNames].sort(() => Math.random() - 0.5);
+      // 1. 建立資料結構
+      let menData = savedMenNames.map((name, i) => ({ id: i, name: name, gender: 'men', linkedWomen: [], isCouple: false }));
+      let womenData = savedWomenNames.map((name, i) => {
+        let targetManId = savedWomenCouples[i];
+        return { id: i, name: name, gender: 'women', linkedManId: targetManId !== "" ? parseInt(targetManId) : null, isCouple: false };
+      });
 
-      // 計算每個花色的男生配額
+      // 將綁定的女生放入對應男生的陣列中，並標記為情侶
+      womenData.forEach(w => {
+        if (w.linkedManId !== null) {
+          let man = menData.find(m => m.id === w.linkedManId);
+          if (man) {
+            man.linkedWomen.push(w);
+            man.isCouple = true;
+            w.isCouple = true;
+          }
+        }
+      });
+
+      // 計算各隊的男生配額 (盡量平分)
       let baseMen = Math.floor(currentConfig.men / teamsCount);
       let remainder = currentConfig.men % teamsCount;
       let menPerSuit = new Array(teamsCount).fill(baseMen);
       
-      // 將餘數隨機分配
-      let indices = Array.from({ length: teamsCount }, (_, i) => i).sort(() => Math.random() - 0.5);
-      for(let i = 0; i < remainder; i++) {
-        menPerSuit[indices[i]]++;
+      let quotaIndices = Array.from({ length: teamsCount }, (_, i) => i).sort(() => Math.random() - 0.5);
+      for(let i = 0; i < remainder; i++) { menPerSuit[quotaIndices[i]]++; }
+
+      let validAllocation = false;
+      let finalTeams = [];
+      let attempts = 0;
+
+      // 2. 模擬洗牌，直到找到不違反人數上限的組合 (最多嘗試 1000 次防卡死)
+      while (!validAllocation && attempts < 1000) {
+        attempts++;
+        let shuffledMen = [...menData].sort(() => Math.random() - 0.5);
+        validAllocation = true;
+        finalTeams = [];
+        let manIndex = 0;
+
+        for (let i = 0; i < teamsCount; i++) {
+          let quota = menPerSuit[i];
+          let teamMen = shuffledMen.slice(manIndex, manIndex + quota);
+          manIndex += quota;
+
+          // 計算這個隊伍的男生「夾帶」了多少個綁定的女生
+          let linkedWomenCount = teamMen.reduce((sum, m) => sum + m.linkedWomen.length, 0);
+          let femaleSpots = 6 - quota; // 這隊剩下的空位就是給女生的
+
+          // 如果夾帶的女生人數，超過了這隊能容納的女生存額，代表此分法無效
+          if (linkedWomenCount > femaleSpots) {
+            validAllocation = false;
+            break;
+          }
+
+          finalTeams.push({ suit: activeSuits[i], menQuota: quota, womenQuota: femaleSpots, men: teamMen, women: [] });
+        }
       }
 
-      // 開始組裝隊伍
-      let teams = [];
-      for (let i = 0; i < teamsCount; i++) {
-        let teamMembers = [];
-        const suitMenCount = menPerSuit[i];
-        const suitWomenCount = 6 - suitMenCount;
-
-        // 抽出男生
-        for(let j=0; j<suitMenCount; j++){
-          teamMembers.push({ name: shuffledMen.pop(), gender: 'men' });
-        }
-        // 抽出女生
-        for(let j=0; j<suitWomenCount; j++){
-          teamMembers.push({ name: shuffledWomen.pop(), gender: 'women' });
-        }
-
-        teams.push({ suit: activeSuits[i], members: teamMembers });
+      // 如果試了 1000 次都失敗，代表綁定條件太嚴苛 (例如單一隊伍男生全部都綁定女生，導致爆滿)
+      if (!validAllocation) {
+        alert("無法滿足目前的情侶綁定條件！\n可能是某隊分到了太多對情侶，導致該隊人數超過 6 人上限。\n請嘗試減少綁定數量。");
+        return; 
       }
 
-      renderResults(teams);
+      // 3. 將未綁定的女生隨機補齊空位
+      let unlinkedWomen = womenData.filter(w => w.linkedManId === null).sort(() => Math.random() - 0.5);
+
+      finalTeams.forEach(team => {
+        // 先把綁定的女生放進隊伍
+        team.men.forEach(m => {
+          m.linkedWomen.forEach(w => team.women.push(w));
+        });
+        // 剩餘空位由未綁定的女生遞補
+        while (team.women.length < team.womenQuota && unlinkedWomen.length > 0) {
+          team.women.push(unlinkedWomen.pop());
+        }
+        
+        // 組合最終名單以供渲染
+        team.members = [...team.men, ...team.women];
+      });
+
+      renderResults(finalTeams);
+      switchScreen('step3');
     }
 
-    // --- 渲染分組結果卡片 ---
+    // --- 渲染畫面 ---
     function renderResults(teams) {
       const container = document.getElementById('results-area');
       container.innerHTML = '';
@@ -242,16 +353,15 @@
         const card = document.createElement('div');
         card.className = 'team-card';
         
-        // 隊伍標題 (花色)
         let headerHTML = `<div class="team-header" style="color: ${team.suit.color}">
                             ${team.suit.icon} ${team.suit.name}
                           </div>`;
         
-        // 隊員名單
         let listHTML = '<ul class="team-list">';
         team.members.forEach(member => {
           let className = member.gender === 'men' ? 'player-men' : 'player-women';
-          listHTML += `<li class="${className}">${member.name}</li>`;
+          let heartIcon = member.isCouple ? '<span class="couple-icon">💕</span>' : '';
+          listHTML += `<li class="${className}">${member.name}${heartIcon}</li>`;
         });
         listHTML += '</ul>';
 
@@ -260,7 +370,6 @@
       });
     }
 
-    // 初始執行
     initGenderCounts();
   </script>
 </body>
